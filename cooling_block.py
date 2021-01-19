@@ -12,6 +12,9 @@ build_dir = pathlib.Path("build")
 if not build_dir.is_dir():
     build_dir.mkdir()
 
+# get string selector object
+s = cq.selectors.StringSyntaxSelector
+
 # heat sink parameters
 base_h = 10
 fin_h = 15
@@ -281,15 +284,19 @@ def heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r):
         )
     )
 
-    # repeat units (L-shape)
+    # create repeat units (L-shape)
     gap_up_right = gap_v.union(gap_h)
     gap_up_left = gap_up_right.rotate((0, 0, 0), (1, 0, 0), 180)
     gap_down_right = gap_up_left.rotate((0, 0, 0), (0, 0, 1), 180)
+    gap_down_left = gap_down_right.rotate((0, 0, 0), (1, 0, 0), 180)
 
+    # calculate total width of cut
     width = fin_number * (fin_gap + fin_t) + fin_gap
 
-    channel = gap_v.translate((0, width / 2 - fin_gap / 2, 0))
-    for x in range(fin_number):
+    # build channel from L-shapes
+    channel = gap_down_right.translate((0, width / 2 - fin_gap / 2, 0))
+    channel = channel.translate((0, -(fin_gap + fin_t), 0,))
+    for x in range(1, fin_number - 1):
         if x % 2 == 0:
             gap = gap_down_right
         else:
@@ -299,21 +306,72 @@ def heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r):
         )
         channel = channel.union(gap)
 
-    # TODO: figure out how to deselect outermost channels from filleting
-    # fillets
-    channel = channel.edges(">X and |Z").edges("not(>Y)").edges("not(<Y)").fillet(cut_r)
+    # overlay oposite side L for last gap to make it symmetrical
+    last_gap = gap_down_left.translate(
+        (0, (width - fin_gap) / 2 - (fin_number - 1) * (fin_gap + fin_t), 0)
+    )
+    channel = channel.union(last_gap)
+
+    # fillet the serpentine channel
+    channel = channel.edges(">X and |Z").fillet(cut_r)
     channel = channel.edges("<X and |Z").fillet(cut_r)
 
     # extra path to close channel
-    close_h = cq.Workplane("XY").box(fin_gap, width, fin_h)
-    close_h = close_h.translate((fin_l / 2 + fin_t + fin_gap, 0, 0))
-    close_v1 = gap_v.translate((fin_t + fin_gap, width / 2 - fin_gap / 2, 0))
-    close_v2 = gap_v.translate((fin_t + fin_gap, -width / 2 + fin_gap / 2, 0))
-    close = close_h.union(close_v1)
-    close = close.union(close_v2)
-    close = close.edges(">X and |Z").fillet(cut_r)
+    close_gap = 3 * fin_gap + fin_t
+    close_w = (width - close_gap) / 2
 
-    channel = channel.union(close)
+    # horizontal parts
+    close_h = cq.Workplane("XY").box(fin_gap, close_w, fin_h)
+    close_end = cq.Workplane("XY").circle(fin_gap / 2).extrude(fin_h)
+
+    close_end_1 = close_end.translate((0, -close_w / 2, -fin_h / 2))
+    close_h1 = close_h.union(close_end_1)
+    close_h1 = close_h1.translate(
+        (fin_l / 2 + fin_t + fin_gap, (width - close_w) / 2, 0)
+    )
+
+    close_end_2 = close_end.translate((0, close_w / 2, -fin_h / 2))
+    close_h2 = close_h.union(close_end_2)
+    close_h2 = close_h2.translate(
+        (fin_l / 2 + fin_t + fin_gap, -(width - close_w) / 2, 0)
+    )
+
+    # vertical parts
+    close_gap_v = cq.Workplane("XY").box(fin_l + fin_gap + fin_t, fin_gap, fin_h)
+    close_v1 = close_gap_v.translate(
+        (fin_t + fin_gap - fin_t / 2, (width - fin_gap) / 2, 0)
+    )
+    close_v2 = close_gap_v.translate(
+        (fin_t + fin_gap - fin_t / 2, -(width - fin_gap) / 2, 0)
+    )
+
+    # join horizontal and vertical sections
+    close_1 = close_h1.union(close_v1)
+    close_2 = close_h2.union(close_v2)
+
+    close_1 = (
+        close_1.edges("|Z").edges("not(>Y or <Y or >X or <X)").fillet(cut_r + fin_t)
+    )
+    close_1 = (
+        close_1.edges("|Z")
+        .edges("not(not(>Y or <Y or >X or <X))")
+        .edges(">X and >Y")
+        .fillet(cut_r + fin_t + fin_gap)
+    )
+
+    close_2 = (
+        close_2.edges("|Z").edges("not(>Y or <Y or >X or <X)").fillet(cut_r + fin_t)
+    )
+    close_2 = (
+        close_2.edges("|Z")
+        .edges("not(not(>Y or <Y or >X or <X))")
+        .edges(">X and <Y")
+        .fillet(cut_r + fin_t + fin_gap)
+    )
+
+    # union closing sections with main serpent
+    channel = channel.union(close_1)
+    channel = channel.union(close_2)
 
     # re-center
     channel = channel.translate((-(fin_gap + fin_t) / 2, 0, 0))
@@ -373,50 +431,15 @@ def block(
     block = block.pushPoints(led_screw_holes)
     block = block.hole(2 * led_screw_tap_r, depth=led_screw_tap_h)
 
-    # # add holes for standoffs
-    # block = block.faces("<Z").workplane(centerOption="CenterOfBoundBox")
-    # block = block.pushPoints(standoff_screw_holes)
-    # block = block.hole(2 * standoff_screw_tap_r, depth=standoff_screw_tap_h)
-
     # create o-ring and heatsink cutouts
     oring_groove = oring_groove.translate((0, 0, (fin_h - oring_groove_h) / 2))
 
-    heatsink_oring1 = oring_groove.union(heatsink_cutout)
-    heatsink_oring1 = heatsink_oring1.translate((0, 0, (block_h - fin_h) / 2,))
-    heatsink_oring1 = heatsink_oring1.rotate((0, 0, 0), (0, 0, 1), 90)
-
-    # heatsink_oring2 = oring_groove.union(heatsink_cutout)
-    # heatsink_oring2 = heatsink_oring2.translate(
-    #     (
-    #         -block_l / 2 + heatsink_offset,
-    #         block_w / 2 - heatsink_offset,
-    #         (block_h - fin_h) / 2,
-    #     )
-    # )
-
-    # heatsink_oring3 = oring_groove.union(heatsink_cutout)
-    # heatsink_oring3 = heatsink_oring3.translate(
-    #     (
-    #         block_l / 2 - heatsink_offset,
-    #         -block_w / 2 + heatsink_offset,
-    #         (block_h - fin_h) / 2,
-    #     )
-    # )
-
-    # heatsink_oring4 = oring_groove.union(heatsink_cutout)
-    # heatsink_oring4 = heatsink_oring4.translate(
-    #     (
-    #         -block_l / 2 + heatsink_offset,
-    #         -block_w / 2 + heatsink_offset,
-    #         (block_h - fin_h) / 2,
-    #     )
-    # )
+    heatsink_oring = oring_groove.union(heatsink_cutout)
+    heatsink_oring = heatsink_oring.translate((0, 0, (block_h - fin_h) / 2,))
+    heatsink_oring = heatsink_oring.rotate((0, 0, 0), (0, 0, 1), 90)
 
     # cut heatsink and oring grooves
-    block = block.cut(heatsink_oring1)
-    # block = block.cut(heatsink_oring2)
-    # block = block.cut(heatsink_oring3)
-    # block = block.cut(heatsink_oring4)
+    block = block.cut(heatsink_oring)
 
     return block
 
@@ -459,11 +482,18 @@ assembly.extend(block_lid.vals())
 
 compound = cq.Compound.makeCompound(assembly)
 
-with open(build_dir.joinpath("assembly.step"), "w") as fh:
-    cq.exporters.exportShape(compound, cq.exporters.ExportTypes.STEP, fh)
+# check to see if we can/should use the "show_object" function
+if "show_object" in locals():
+    # show in CadQuery Editor
+    for thing in assembly:
+        show_object(thing)
+else:
+    # export everything as step (this can take a while)
+    with open(build_dir.joinpath("assembly.step"), "w") as fh:
+        cq.exporters.exportShape(compound, cq.exporters.ExportTypes.STEP, fh)
 
-with open(build_dir.joinpath("block.step"), "w") as fh:
-    cq.exporters.exportShape(cooling_block, cq.exporters.ExportTypes.STEP, fh)
+    with open(build_dir.joinpath("block.step"), "w") as fh:
+        cq.exporters.exportShape(cooling_block, cq.exporters.ExportTypes.STEP, fh)
 
-with open(build_dir.joinpath("lid.step"), "w") as fh:
-    cq.exporters.exportShape(block_lid, cq.exporters.ExportTypes.STEP, fh)
+    with open(build_dir.joinpath("lid.step"), "w") as fh:
+        cq.exporters.exportShape(block_lid, cq.exporters.ExportTypes.STEP, fh)
