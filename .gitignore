@@ -133,3 +133,6 @@ dmypy.json
 
 # build_dir
 build/
+
+# ref dir
+ref/

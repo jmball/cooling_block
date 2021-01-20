@@ -4,6 +4,7 @@ All dimensions are in mm.
 """
 import math
 import pathlib
+import warnings
 
 import cadquery as cq
 
@@ -12,8 +13,10 @@ build_dir = pathlib.Path("build")
 if not build_dir.is_dir():
     build_dir.mkdir()
 
-# get string selector object
-s = cq.selectors.StringSyntaxSelector
+# check if ref_dir available
+ref_dir = pathlib.Path("ref")
+if not ref_dir.is_dir():
+    warnings.warn("Reference directory not found - cannot import step files.")
 
 # heat sink parameters
 base_h = 10
@@ -36,10 +39,43 @@ oring_cs = 2.62
 oring_groove_h = 0.077 * 25.4
 oring_groove_w = 0.1225 * 25.4
 
-# extrusion (strut) width
+# Aluminium extrusion
+# Ooznest V-Slot Linear Rail – 20x20mm
 extrusion_w = 20
+extrusion_h = 270
+if ref_dir.is_dir():
+    try:
+        extrusion = cq.importers.importStep(
+            str(ref_dir.joinpath("Al-extrusion-270mm.step"))
+        )
+        extrusion = extrusion.rotate((0, 0, 0), (1, 0, 0), 90)
+    except:
+        warnings.warn("Couldn't load extrusion step file.")
+
+# extrusion bracket
+# Ooznest 90 Degree Angle Corner
 bracket_l = 20
 bracket_w = 20
+bracket_h = 20
+if ref_dir.is_dir():
+    try:
+        bracket = cq.importers.importStep(
+            str(ref_dir.joinpath("black-angle-corner-connector.step"))
+        )
+        bracket = bracket.rotate((0, 0, 0), (1, 0, 0), 90)
+    except:
+        warnings.warn("Couldn't load bracket step file.")
+
+# bracket screw
+bracket_screw_offset_z = 3.5
+if ref_dir.is_dir():
+    try:
+        bracket_screw = cq.importers.importStep(
+            str(ref_dir.joinpath("freecad-hex-head-screw-M5x25.step"))
+        )
+    except:
+        warnings.warn("Couldn't load bracket screw step file.")
+
 
 # screw holes for fixing led array/heatsink assembly to support extrusion
 extrusion_screw_clearance_r = 5.5 / 2
@@ -117,7 +153,18 @@ cs_holes4 = [((block_l - extrusion_w) / 2, y) for y in cs_centers_along_y_axis_2
 
 cs_holes = cs_holes1 + cs_holes2 + cs_holes3 + cs_holes4
 
-# extrusion (strut) mounting holes
+# countersink screw
+cs_screw_h = 25
+if ref_dir.is_dir():
+    try:
+        cs_screw = cq.importers.importStep(
+            str(ref_dir.joinpath("freecad-countersink-screw-M5x25.step"))
+        )
+    except:
+        warnings.warn("Couldn't load cs screw step file.")
+
+
+# extrusion (extrusion) mounting holes
 extrusion_screw_tread_h = fin_h
 
 extrusion_holes = [
@@ -204,6 +251,54 @@ standoff_screw_holes = [
     (block_l / 2 - standoff_screw_offset, -(block_w / 2 - standoff_screw_offset)),
     (-(block_l / 2 - standoff_screw_offset), -(block_w / 2 - standoff_screw_offset)),
 ]
+
+# protective window
+window_l = block_l
+window_w = block_w
+window_h = 3
+window_screw_clearance_r = 3.4 / 2
+window_screw_offset_x = 3.5
+window_screw_offset_y = block_l / led_array_cols / 2
+window_screw_holes = [
+    (-window_l / 2 + window_screw_offset_x, -window_w / 2 + window_screw_offset_y),
+    (window_l / 2 - window_screw_offset_x, -window_w / 2 + window_screw_offset_y),
+    (-window_l / 2 + window_screw_offset_x, window_w / 2 - window_screw_offset_y),
+    (window_l / 2 - window_screw_offset_x, window_w / 2 - window_screw_offset_y),
+]
+
+# window spacers
+# e.g. Accu HPS-6-3.4-10-N
+spacer_inner_r = 3.4 / 2
+spacer_outer_r = 6 / 2
+spacer_h = 10
+
+# water inlet/outlet ports
+# SMC KQ2L12-G04A
+water_port_thread_tap_r = 19 / 2
+water_port_thread_h = 9.05
+water_port_spacing = 2 * water_port_thread_tap_r + 45
+water_port_hole_centers = [
+    (
+        water_port_spacing / 2,
+        block_w / 2 - extrusion_w - oring_groove_w - oring_edge_gap - fin_gap / 2,
+    ),
+    (
+        -water_port_spacing / 2,
+        block_w / 2 - extrusion_w - oring_groove_w - oring_edge_gap - fin_gap / 2,
+    ),
+]
+
+if ref_dir.is_dir():
+    try:
+        water_port = cq.importers.importStep(str(ref_dir.joinpath("KQ2L12-G04A.stp")))
+        water_port = water_port.rotate((0, 0, 0), (1, 0, 0), 90)
+        water_port = water_port.rotate((0, 0, 0), (0, 0, 1), 90)
+        water_port_h = (
+            water_port.vertices(">Z").val().Center().z
+            - water_port.vertices("<Z").val().Center().z
+        )
+    except:
+        warnings.warn("Couldn't load water port step file.")
 
 
 def oring_groove(inner_length, inner_width, groove_h, groove_w, inner_radius):
@@ -317,7 +412,7 @@ def heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r):
     channel = channel.edges("<X and |Z").fillet(cut_r)
 
     # extra path to close channel
-    close_gap = 3 * fin_gap + fin_t
+    close_gap = water_port_spacing
     close_w = (width - close_gap) / 2
 
     # horizontal parts
@@ -466,7 +561,35 @@ def lid():
     lid = lid.pushPoints(pt_hole_centers)
     lid = lid.hole(2 * pt_hole_clearance_r)
 
+    # add holes for water ports
+    lid = lid.faces(">Z").workplane(centerOption="CenterOfBoundBox")
+    lid = lid.pushPoints(water_port_hole_centers)
+    lid = lid.hole(2 * water_port_thread_tap_r)
+
     return lid
+
+
+def window():
+    """Window to protect pcb."""
+
+    window = cq.Workplane("XY").box(window_l, window_w, window_h)
+    window = window.translate((0, 0, -(block_h + window_h) / 2 - 10))
+
+    # add holes for lid fasteners
+    window = window.faces(">Z").workplane(centerOption="CenterOfBoundBox")
+    window = window.pushPoints(window_screw_holes)
+    window = window.hole(2 * cs_screw_clearance_r,)
+
+    return window
+
+
+def cylindrical_spacer(inner_r, outer_r, height):
+    """Cylindrical spacer for window."""
+    inner = cq.Workplane("XY").circle(inner_r).extrude(height)
+    outer = cq.Workplane("XY").circle(outer_r).extrude(height)
+    spacer = outer.cut(inner)
+
+    return spacer
 
 
 cut = heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r)
@@ -475,10 +598,152 @@ oring = oring_groove(
 )
 cooling_block = block(cut, oring)
 block_lid = lid()
+pcb_window = window()
 
 assembly = []
 assembly.extend(cooling_block.vals())
 assembly.extend(block_lid.vals())
+assembly.extend(pcb_window.vals())
+
+for x, y in window_screw_holes:
+    _spacer = cylindrical_spacer(spacer_inner_r, spacer_outer_r, spacer_h).translate(
+        (x, y, -block_h / 2 - spacer_h)
+    )
+    assembly.extend(_spacer.vals())
+
+try:
+    water_inlet = water_port.translate(
+        (
+            water_port_hole_centers[0][0],
+            water_port_hole_centers[0][1],
+            block_h / 2 + lid_h,
+        )
+    )
+    water_outlet = water_port.translate(
+        (
+            water_port_hole_centers[1][0],
+            water_port_hole_centers[1][1],
+            block_h / 2 + lid_h,
+        )
+    )
+
+    assembly.extend(water_inlet.vals())
+    assembly.extend(water_outlet.vals())
+except:
+    pass
+
+try:
+    bracket_1 = bracket.translate(
+        (
+            extrusion_holes[0][0],
+            extrusion_holes[0][1],
+            (bracket_h + block_h) / 2 + lid_h,
+        )
+    )
+
+    bracket_2 = bracket.rotate((0, 0, 0), (0, 0, 1), 180)
+    bracket_2 = bracket_2.translate(
+        (
+            extrusion_holes[1][0],
+            extrusion_holes[1][1],
+            (bracket_h + block_h) / 2 + lid_h,
+        )
+    )
+
+    bracket_3 = bracket.translate(
+        (
+            extrusion_holes[2][0],
+            extrusion_holes[2][1],
+            (bracket_h + block_h) / 2 + lid_h,
+        )
+    )
+
+    bracket_4 = bracket.rotate((0, 0, 0), (0, 0, 1), 180)
+    bracket_4 = bracket_4.translate(
+        (
+            extrusion_holes[3][0],
+            extrusion_holes[3][1],
+            (bracket_h + block_h) / 2 + lid_h,
+        )
+    )
+
+    assembly.extend(bracket_1.vals())
+    assembly.extend(bracket_2.vals())
+    assembly.extend(bracket_3.vals())
+    assembly.extend(bracket_4.vals())
+except:
+    pass
+
+try:
+    bracket_screw_1 = bracket_screw.translate(
+        (
+            extrusion_holes[0][0],
+            extrusion_holes[0][1],
+            block_h / 2 + lid_h + bracket_screw_offset_z,
+        )
+    )
+
+    bracket_screw_2 = bracket_screw.translate(
+        (
+            extrusion_holes[1][0],
+            extrusion_holes[1][1],
+            block_h / 2 + lid_h + bracket_screw_offset_z,
+        )
+    )
+
+    bracket_screw_3 = bracket_screw.translate(
+        (
+            extrusion_holes[2][0],
+            extrusion_holes[2][1],
+            block_h / 2 + lid_h + bracket_screw_offset_z,
+        )
+    )
+
+    bracket_screw_4 = bracket_screw.translate(
+        (
+            extrusion_holes[3][0],
+            extrusion_holes[3][1],
+            block_h / 2 + lid_h + bracket_screw_offset_z,
+        )
+    )
+
+    assembly.extend(bracket_screw_1.vals())
+    assembly.extend(bracket_screw_2.vals())
+    assembly.extend(bracket_screw_3.vals())
+    assembly.extend(bracket_screw_4.vals())
+except:
+    pass
+
+try:
+    extrusion = extrusion.rotate((0, 0, 0), (1, 0, 0), 90)
+
+    extrusion_1 = extrusion.translate(
+        (
+            -(block_l - extrusion_w) / 2,
+            -extrusion_h / 2,
+            (block_h + extrusion_w) / 2 + lid_h,
+        )
+    )
+
+    extrusion_2 = extrusion.translate(
+        (
+            (block_l - extrusion_w) / 2,
+            -extrusion_h / 2,
+            (block_h + extrusion_w) / 2 + lid_h,
+        )
+    )
+
+    assembly.extend(extrusion_1.vals())
+    assembly.extend(extrusion_2.vals())
+except:
+    pass
+
+try:
+    for x, y in cs_holes:
+        _cs_screw = cs_screw.translate((x, y, block_h / 2 + lid_h))
+        assembly.extend(_cs_screw.vals())
+except:
+    pass
 
 compound = cq.Compound.makeCompound(assembly)
 
