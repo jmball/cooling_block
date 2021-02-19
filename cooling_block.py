@@ -18,14 +18,9 @@ ref_dir = pathlib.Path("ref")
 if not ref_dir.is_dir():
     warnings.warn("Reference directory not found - cannot import step files.")
 
-# heat sink parameters
-base_h = 10
-fin_h = 15
-
 # block parameters
 block_l = 350
 block_w = 350
-block_h = base_h + fin_h
 
 # led array parameters
 led_array_cols = 11
@@ -33,8 +28,47 @@ led_array_rows = led_array_cols
 led_repeat_footprint_l = block_l / led_array_cols
 led_repeat_footprint_w = block_w / led_array_rows
 
+# screw holes fixing led array to block
+led_screw_tap_r = 2.5 / 2
+led_screw_tap_h = 5
+
+# regular grid of screws
+led_screw_centers_along_x_axis = [
+    -block_l / 2 + x * led_repeat_footprint_l for x in range(1, led_array_cols)
+]
+led_screw_centers_along_y_axis = [
+    -block_w / 2 + y * led_repeat_footprint_w + (led_repeat_footprint_w / 2)
+    for y in range(0, led_array_rows)
+]
+
+# irregular positioned screws along left and right sides
+led_screw_side_offset = 3.5
+led_screw_centers_along_left = [
+    (-block_l / 2 + led_screw_side_offset, y) for y in led_screw_centers_along_y_axis
+]
+led_screw_centers_along_right = [
+    (block_l / 2 - led_screw_side_offset, y) for y in led_screw_centers_along_y_axis
+]
+
+# all screw holes
+led_screw_holes = set(
+    [
+        (x, y)
+        for x in led_screw_centers_along_x_axis
+        for y in led_screw_centers_along_y_axis
+    ]
+    + led_screw_centers_along_left
+    + led_screw_centers_along_right
+)
+
+# heat sink parameters
+base_h = led_screw_tap_h + 2
+fin_h = 15
+block_h = base_h + fin_h
+
 # o-ring parameters
-oring_edge_gap = 3
+oring_inner_edge_gap = 7
+oring_outer_edge_gap = 4
 oring_cs = 2.62
 oring_groove_h = 0.077 * 25.4
 oring_groove_w = 0.1225 * 25.4
@@ -174,11 +208,27 @@ extrusion_holes = [
     ((block_l - extrusion_w) / 2, block_w / 2 - extrusion_w - bracket_w / 2),
 ]
 
+# more o-ring parameters
+oring_inner_l = (
+    block_l
+    - extrusion_w
+    - 2 * cs_screw_clearance_r
+    - 2 * oring_outer_edge_gap
+    - 2 * oring_groove_w
+)
+oring_inner_w = (
+    block_w
+    - extrusion_w
+    - 2 * cs_screw_clearance_r
+    - 2 * oring_outer_edge_gap
+    - 2 * oring_groove_w
+)
+
 # more heat sink parameters
-heatsink_cut_l = block_l - 2 * (extrusion_w + oring_edge_gap + oring_groove_w)
-heatsink_cut_w = heatsink_cut_l
+heatsink_cut_l = oring_inner_l - 2 * oring_inner_edge_gap
+heatsink_cut_w = oring_inner_l - 2 * oring_inner_edge_gap
 fin_gap = 10
-approx_fin_t = 2
+approx_fin_t = 4
 fin_number = int((heatsink_cut_w - fin_gap) / (approx_fin_t + fin_gap))
 if fin_number % 2 == 0:
     fin_number += 1
@@ -188,58 +238,13 @@ if fin_t < 1:
 fin_l = heatsink_cut_l - 2 * fin_gap - fin_t
 cut_r = fin_gap - 1
 
-# more o-ring parameters
-oring_inner_l = heatsink_cut_l + 2 * oring_edge_gap
-oring_inner_w = heatsink_cut_w + 2 * oring_edge_gap
-oring_inner_r = cut_r + oring_edge_gap
-heatsink_offset = (
-    (oring_inner_l + 2 * oring_groove_w) / 2
-    + extrusion_w / 2
-    + extrusion_screw_clearance_r
-    + extrusion_screw_min_gap
-    + oring_edge_gap
-)
-
-# block height depends on heatsink parameters
-block_h = base_h + fin_h
+oring_inner_r = cut_r + oring_inner_edge_gap
 
 # lid paramters
 lid_l = block_l
 lid_w = block_w
 lid_h = 10
 
-# screw holes fixing led array to block
-led_screw_tap_r = 2.5 / 2
-led_screw_tap_h = 5
-
-# regular grid of screws
-led_screw_centers_along_x_axis = [
-    -block_l / 2 + x * led_repeat_footprint_l for x in range(1, led_array_cols)
-]
-led_screw_centers_along_y_axis = [
-    -block_w / 2 + y * led_repeat_footprint_w + (led_repeat_footprint_w / 2)
-    for y in range(0, led_array_rows)
-]
-
-# irregular positioned screws along left and right sides
-led_screw_side_offset = 3.5
-led_screw_centers_along_left = [
-    (-block_l / 2 + led_screw_side_offset, y) for y in led_screw_centers_along_y_axis
-]
-led_screw_centers_along_right = [
-    (block_l / 2 - led_screw_side_offset, y) for y in led_screw_centers_along_y_axis
-]
-
-# all screw holes
-led_screw_holes = set(
-    [
-        (x, y)
-        for x in led_screw_centers_along_x_axis
-        for y in led_screw_centers_along_y_axis
-    ]
-    + led_screw_centers_along_left
-    + led_screw_centers_along_right
-)
 
 # screw holes for standoffs for attaching a window/diffuser
 standoff_screw_tap_r = 2.5 / 2
@@ -276,15 +281,27 @@ spacer_h = 10
 # SMC KQ2L12-G04A
 water_port_thread_tap_r = 19 / 2
 water_port_thread_h = 9.05
-water_port_spacing = 2 * water_port_thread_tap_r + 45
+water_port_spacing = 53
 water_port_hole_centers = [
     (
         water_port_spacing / 2,
-        block_w / 2 - extrusion_w - oring_groove_w - oring_edge_gap - fin_gap / 2,
+        block_w / 2
+        - extrusion_w / 2
+        - cs_screw_clearance_r
+        - oring_outer_edge_gap
+        - oring_groove_w
+        - oring_inner_edge_gap
+        - fin_gap / 2,
     ),
     (
         -water_port_spacing / 2,
-        block_w / 2 - extrusion_w - oring_groove_w - oring_edge_gap - fin_gap / 2,
+        block_w / 2
+        - extrusion_w / 2
+        - cs_screw_clearance_r
+        - oring_outer_edge_gap
+        - oring_groove_w
+        - oring_inner_edge_gap
+        - fin_gap / 2,
     ),
 ]
 
@@ -299,6 +316,37 @@ if ref_dir.is_dir():
         )
     except:
         warnings.warn("Couldn't load water port step file.")
+
+
+# ground screw
+# Accu Product Code (APC): SIP-M3-5-A2
+ground_screw_tap_r = 2.5 / 2
+ground_screw_tap_h = 5
+ground_screw_cap_r = 3
+ground_screw_cap_clearance = 1
+
+ground_screw_x_y = [
+    (
+        -block_l / 2 + ground_screw_cap_r + ground_screw_cap_clearance,
+        -block_w / 2 + ground_screw_cap_r + ground_screw_cap_clearance,
+    )
+]
+
+# ground ring terminal
+# https://uk.rs-online.com/web/p/ring-terminals/1787255/
+# RS components 178-7255
+ground_ring_l = 10  # length from wire inlet to center of ring
+ground_ring_w = 5
+ground_ring_clearance = 5
+
+ground_ring_lid_cut_w = 2 * (ground_screw_cap_r + ground_screw_cap_clearance)
+ground_ring_lid_cut_l = (
+    ground_screw_cap_clearance
+    + ground_screw_cap_r
+    + ground_ring_l
+    + ground_ring_clearance
+)
+ground_screw_lid_cut_r = 3
 
 
 def oring_groove(inner_length, inner_width, groove_h, groove_w, inner_radius):
@@ -491,9 +539,6 @@ def block(
         Height of heatsink fins.
     heatsink_cutout : Shape
         Shape to cut from block to define heatsink.
-    heatsink_offset : float
-        Offset from center of heatsink cutout to edge of block. Assumes 4 square
-        cutouts from a square block.
     oring_groove : Shape
         Shape to cut from block to define o-ring groove.
     oring_groove_h : Shape
@@ -526,6 +571,11 @@ def block(
     block = block.pushPoints(led_screw_holes)
     block = block.hole(2 * led_screw_tap_r, depth=led_screw_tap_h)
 
+    # add hole for ground screw
+    block = block.faces(">Z").workplane(centerOption="CenterOfBoundBox")
+    block = block.pushPoints(ground_screw_x_y)
+    block = block.hole(2 * ground_screw_tap_r, depth=ground_screw_tap_h)
+
     # create o-ring and heatsink cutouts
     oring_groove = oring_groove.translate((0, 0, (fin_h - oring_groove_h) / 2))
 
@@ -543,6 +593,22 @@ def lid():
     """Lid for cooling block."""
     lid = cq.Workplane("XY").box(lid_l, lid_w, lid_h)
     lid = lid.translate((0, 0, (block_h + lid_h) / 2))
+
+    # add cut for ground ring
+    ground_ring_cut = cq.Workplane("XY").box(
+        ground_ring_lid_cut_l, ground_ring_lid_cut_w, lid_h
+    )
+    ground_ring_cut = ground_ring_cut.translate(
+        (
+            -(lid_l - ground_ring_lid_cut_l) / 2,
+            -(lid_w - ground_ring_lid_cut_w) / 2,
+            (block_h + lid_h) / 2,
+        )
+    )
+    ground_ring_cut = ground_ring_cut.edges(">X and >Y and |Z").fillet(
+        ground_screw_lid_cut_r
+    )
+    lid = lid.cut(ground_ring_cut)
 
     # add holes for lid fasteners
     lid = lid.faces(">Z").workplane(centerOption="CenterOfBoundBox")
