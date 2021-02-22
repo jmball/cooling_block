@@ -69,9 +69,12 @@ block_h = base_h + fin_h
 # o-ring parameters
 oring_inner_edge_gap = 7
 oring_outer_edge_gap = 4
-oring_cs = 2.62
-oring_groove_h = 0.077 * 25.4
-oring_groove_w = 0.1225 * 25.4
+
+# form Apple Rubber ISO 3601 Metric Size O-Rings Quick Reference Chart
+oring_cs = 3.53
+oring_groove_h = 2.64
+oring_groove_w = 4.57
+
 
 # Aluminium extrusion
 # Ooznest V-Slot Linear Rail – 20x20mm
@@ -239,6 +242,17 @@ fin_l = heatsink_cut_l - 2 * fin_gap - fin_t
 cut_r = fin_gap - 1
 
 oring_inner_r = cut_r + oring_inner_edge_gap
+
+# o-ring dimenstions
+oring_outer_perimeter = (
+    2 * (oring_inner_l - 2 * oring_inner_r)
+    + 2 * (oring_inner_w - 2 * oring_inner_r)
+    + 2 * math.pi * (oring_inner_r + oring_groove_w)
+)
+oring_od = oring_outer_perimeter / math.pi
+oring_id = oring_od - 2 * oring_cs
+print(f"O-ring ID = {oring_id}, O-ring OD = {oring_od}")
+
 
 # lid paramters
 lid_l = block_l
