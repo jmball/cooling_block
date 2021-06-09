@@ -140,6 +140,27 @@ for x in range(1, led_array_cols + 1):
     )
 pt_hole_centers = pt_hole_x_centers_along_top + pt_hole_x_centers_along_bottom
 
+# passthrough cuts to turn wire holes in U's
+pt_u_x = pt_hole_clearance_r * 2
+pt_u_y = pt_hole_footprint_offset
+pt_u_x_centers_along_top = []
+for x in range(0, led_array_cols):
+    pt_u_x_centers_along_top.append(
+        (
+            -block_l / 2 + x * led_repeat_footprint_l + pt_hole_footprint_offset,
+            block_w / 2 - pt_u_y / 2,
+        )
+    )
+pt_u_x_centers_along_bottom = []
+for x in range(1, led_array_cols + 1):
+    pt_u_x_centers_along_bottom.append(
+        (
+            -block_l / 2 + x * led_repeat_footprint_l - pt_hole_footprint_offset,
+            -block_w / 2 + pt_u_y / 2,
+        )
+    )
+pt_u_centers = pt_u_x_centers_along_top + pt_u_x_centers_along_bottom
+
 # countersink screws for fixing lid to block
 cs_screw_clearance_r = extrusion_screw_clearance_r
 cs_screw_tap_r = 4.2 / 2
@@ -452,14 +473,24 @@ def heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r):
 
     # build channel from L-shapes
     channel = gap_down_right.translate((0, width / 2 - fin_gap / 2, 0))
-    channel = channel.translate((0, -(fin_gap + fin_t), 0,))
+    channel = channel.translate(
+        (
+            0,
+            -(fin_gap + fin_t),
+            0,
+        )
+    )
     for x in range(1, fin_number - 1):
         if x % 2 == 0:
             gap = gap_down_right
         else:
             gap = gap_up_right
         gap = gap.translate(
-            (0, width / 2 - fin_gap / 2 - (x + 1) * (fin_gap + fin_t), 0,)
+            (
+                0,
+                width / 2 - fin_gap / 2 - (x + 1) * (fin_gap + fin_t),
+                0,
+            )
         )
         channel = channel.union(gap)
 
@@ -537,7 +568,8 @@ def heatsink_cutout(fin_h, fin_l, fin_t, fin_gap, fin_number, cut_r):
 
 
 def block(
-    heatsink_cutout, oring_groove,
+    heatsink_cutout,
+    oring_groove,
 ):
     """Cooling block.
 
@@ -594,7 +626,13 @@ def block(
     oring_groove = oring_groove.translate((0, 0, (fin_h - oring_groove_h) / 2))
 
     heatsink_oring = oring_groove.union(heatsink_cutout)
-    heatsink_oring = heatsink_oring.translate((0, 0, (block_h - fin_h) / 2,))
+    heatsink_oring = heatsink_oring.translate(
+        (
+            0,
+            0,
+            (block_h - fin_h) / 2,
+        )
+    )
     heatsink_oring = heatsink_oring.rotate((0, 0, 0), (0, 0, 1), 90)
 
     # cut heatsink and oring grooves
@@ -641,6 +679,13 @@ def lid():
     lid = lid.pushPoints(pt_hole_centers)
     lid = lid.hole(2 * pt_hole_clearance_r)
 
+    # add cuts to turn wire passthroughs into U-shapes
+    u_cut = cq.Workplane("XY").box(pt_u_x, pt_u_y, lid_h)
+    for x, y in pt_u_centers:
+        _u_cut = u_cut
+        _u_cut = _u_cut.translate((x, y, (block_h + lid_h) / 2))
+        lid = lid.cut(_u_cut)
+
     # add holes for water ports
     lid = lid.faces(">Z").workplane(centerOption="CenterOfBoundBox")
     lid = lid.pushPoints(water_port_hole_centers)
@@ -651,14 +696,15 @@ def lid():
 
 def window():
     """Window to protect pcb."""
-
     window = cq.Workplane("XY").box(window_l, window_w, window_h)
     window = window.translate((0, 0, -(block_h + window_h) / 2 - 10))
 
     # add holes for lid fasteners
     window = window.faces(">Z").workplane(centerOption="CenterOfBoundBox")
     window = window.pushPoints(window_screw_holes)
-    window = window.hole(2 * cs_screw_clearance_r,)
+    window = window.hole(
+        2 * cs_screw_clearance_r,
+    )
 
     return window
 
