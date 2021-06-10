@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Cooling block and lid.
 
 All dimensions are in mm.
@@ -7,6 +8,7 @@ import pathlib
 import warnings
 
 import cadquery as cq
+from cadquery import CQ
 
 # create build folder if required
 build_dir = pathlib.Path("build")
@@ -279,7 +281,12 @@ print(f"O-ring ID = {oring_id}, O-ring OD = {oring_od}")
 lid_l = block_l
 lid_w = block_w
 lid_h = 10
-
+lid_recess_depth = 5
+lid_recess_xy = 310
+lid_water_thread_length = 20  # total length of the threads for the water hose connections
+lid_threadblock_xy = [90, 35]  # xy dims for the hose connection updent
+lid_chamfer_clearance = 10  # to make sure there's room to get the chamfer tool in
+lid_fillet_r = 5  # general purpose fillet radius
 
 # screw holes for standoffs for attaching a window/diffuser
 standoff_screw_tap_r = 2.5 / 2
@@ -686,10 +693,39 @@ def lid():
         _u_cut = _u_cut.translate((x, y, (block_h + lid_h) / 2))
         lid = lid.cut(_u_cut)
 
-    # add holes for water ports
-    lid = lid.faces(">Z").workplane(centerOption="CenterOfBoundBox")
+    # for making ure the chamfer cutting tool can get down to where it needs to be
+    chamfer_allowance = (
+        CQ().copyWorkplane(lid.faces(">Z").workplane(centerOption="CenterOfBoundBox"))
+        .pushPoints(cs_holes)
+        .circle(lid_chamfer_clearance).extrude(lid_water_thread_length - lid_h)
+    )
+
+    # for a pocket in the middle to reduce weight
+    recess = (
+        CQ().copyWorkplane(lid.faces(">Z").workplane(centerOption="CenterOfBoundBox", invert=True))
+        .box(lid_recess_xy, lid_recess_xy, lid_recess_depth, centered=(True, True, False))
+    )
+
+    # for a block around the hose connections to add more connector thread purchase
+    thread_block = (
+        CQ().copyWorkplane(lid.faces("<Z").workplane(centerOption="CenterOfBoundBox", invert=True))
+        .center(0, water_port_hole_centers[0][1])
+        .box(lid_threadblock_xy[0], lid_threadblock_xy[1], lid_water_thread_length, centered=(True, True, False))
+        .cut(chamfer_allowance)
+        .edges('|Z').fillet(lid_fillet_r)
+    )
+
+    # cut the thread block from the recess negative and then fillet that
+    # this allows the result to have fillets that are manufacturable
+    recess = recess.cut(thread_block).edges('|Z').fillet(lid_fillet_r)
+
+    # cut out the recess then add the thread block
+    lid = lid.cut(recess).union(thread_block)
+
+    # add holes for water ports (drill holes up form bottom)
+    lid = lid.faces("<Z").workplane(centerOption="CenterOfBoundBox", invert=True)
     lid = lid.pushPoints(water_port_hole_centers)
-    lid = lid.hole(2 * water_port_thread_tap_r)
+    lid = lid.circle(water_port_thread_tap_r).cutThruAll()
 
     return lid
 
